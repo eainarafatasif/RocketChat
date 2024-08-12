@@ -57,132 +57,53 @@ You can follow these instructions to setup a dev environment:
 
 **Starting Rocket.Chat:**
 
-Installing Rocket.Chat on Ubuntu 22.04 involves setting up MongoDB, installing Rocket.Chat, and configuring it as a service. Below are the steps to guide you through the process:
+To install Rocket.Chat with Nginx, MySQL, and an SSL certificate on Ubuntu 22.04, follow these steps:
 
-### Step 1: Update the System
-First, update the system packages to ensure everything is up to date.
-
-```bash
-sudo apt-get update
-sudo apt-get upgrade -y
-```
-
-### Step 2: Install MongoDB
-Rocket.Chat requires MongoDB as its database. Install MongoDB using the following commands:
-
-1. Import the public key used by the package management system:
-
+### 1. **Update the System**
    ```bash
-   wget -qO - https://www.mongodb.org/static/pgp/server-4.4.asc | sudo apt-key add -
+   sudo apt update && sudo apt upgrade -y
    ```
 
-2. Create a list file for MongoDB:
-
+### 2. **Install Required Dependencies**
    ```bash
-   echo "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu focal/mongodb-org/4.4 multiverse" | sudo tee /etc/apt/sources.list.d/mongodb-org-4.4.list
+   sudo apt install -y curl build-essential software-properties-common
    ```
 
-3. Reload the package database:
-
+### 3. **Install MongoDB**
+   Rocket.Chat uses MongoDB as its primary database.
    ```bash
-   sudo apt-get update
+   curl -fsSL https://pgp.mongodb.com/server-6.0.asc | sudo tee /usr/share/keyrings/mongodb-server-6.0.gpg > /dev/null
+   echo "deb [ signed-by=/usr/share/keyrings/mongodb-server-6.0.gpg ] https://repo.mongodb.org/apt/ubuntu focal/mongodb-org/6.0 multiverse" | sudo tee /etc/apt/sources.list.d/mongodb-org-6.0.list
+   sudo apt update
+   sudo apt install -y mongodb-org
+   sudo systemctl enable mongod --now
    ```
 
-4. Install MongoDB:
-
+### 4. **Install Node.js**
+   Rocket.Chat requires Node.js.
    ```bash
-   sudo apt-get install -y mongodb-org
+   curl -fsSL https://deb.nodesource.com/setup_14.x | sudo -E bash -
+   sudo apt install -y nodejs
    ```
 
-5. Start and enable MongoDB:
-
-   ```bash
-   sudo systemctl start mongod
-   sudo systemctl enable mongod
-   ```
-
-### Step 3: Install Node.js
-Rocket.Chat requires Node.js. Install the latest LTS version:
-
-1. Install the NodeSource Node.js 14.x repository:
-
-   ```bash
-   curl -sL https://deb.nodesource.com/setup_14.x | sudo bash -
-   ```
-
-2. Install Node.js:
-
-   ```bash
-   sudo apt-get install -y nodejs
-   ```
-
-### Step 4: Install Rocket.Chat
-Now, download and install Rocket.Chat:
-
-1. Create a directory for Rocket.Chat:
-
+### 5. **Install Rocket.Chat**
    ```bash
    sudo mkdir -p /opt/Rocket.Chat
-   ```
-
-2. Navigate to the directory:
-
-   ```bash
+   sudo chown -R $USER:$USER /opt/Rocket.Chat
    cd /opt/Rocket.Chat
+   curl -L https://releases.rocket.chat/latest/download -o rocket.chat.tgz
+   tar -xvzf rocket.chat.tgz
+   rm rocket.chat.tgz
+   cd bundle/programs/server
+   npm install
+   cd ../../..
    ```
 
-3. Download the latest Rocket.Chat tarball:
-
+### 6. **Create a Systemd Service for Rocket.Chat**
    ```bash
-   sudo curl -L https://releases.rocket.chat/latest/download -o rocket.chat.tgz
-   ```
-
-4. Extract the tarball:
-
-   ```bash
-   sudo tar -xvzf rocket.chat.tgz
-   sudo mv bundle/* /opt/Rocket.Chat
-   ```
-
-5. Install the necessary dependencies:
-
-   ```bash
-   cd /opt/Rocket.Chat/programs/server
-   sudo npm install
-   ```
-
-### Step 5: Configure Rocket.Chat
-Set the environment variables and start Rocket.Chat:
-
-1. Set environment variables:
-
-   ```bash
-   export MONGO_URL=mongodb://localhost:27017/rocketchat
-   export ROOT_URL=http://your-domain.com:3000
-   export PORT=3000
-   ```
-
-2. Start Rocket.Chat:
-
-   ```bash
-   cd /opt/Rocket.Chat
-   sudo node main.js
-   ```
-
-### Step 6: Set Up Rocket.Chat as a Service
-To ensure Rocket.Chat runs automatically on startup, set it up as a systemd service:
-
-1. Create a systemd service file:
-
-   ```bash
-   sudo nano /etc/systemd/system/rocketchat.service
-   ```
-
-2. Add the following content:
-
-   ```ini
+   sudo tee /lib/systemd/system/rocketchat.service << EOF
    [Unit]
-   Description=Rocket.Chat server
+   Description=The Rocket.Chat Server
    After=network.target remote-fs.target nss-lookup.target mongod.target
 
    [Service]
@@ -190,82 +111,98 @@ To ensure Rocket.Chat runs automatically on startup, set it up as a systemd serv
    StandardOutput=syslog
    StandardError=syslog
    SyslogIdentifier=rocketchat
-   User=root
+   User=rocketchat
    Environment=MONGO_URL=mongodb://localhost:27017/rocketchat
-   Environment=ROOT_URL=http://your-domain.com:3000
+   Environment=ROOT_URL=http://localhost:3000
    Environment=PORT=3000
-   Environment=NODE_ENV=production
-   WorkingDirectory=/opt/Rocket.Chat
-
+   Restart=always
+   RestartSec=10
    [Install]
    WantedBy=multi-user.target
+   EOF
    ```
 
-3. Reload the systemd daemon to apply the new service file:
-
+   Then reload the systemd daemon and start Rocket.Chat:
    ```bash
    sudo systemctl daemon-reload
+   sudo systemctl enable rocketchat --now
    ```
 
-4. Start and enable Rocket.Chat:
-
+### 7. **Install and Configure Nginx**
    ```bash
-   sudo systemctl start rocketchat
-   sudo systemctl enable rocketchat
+   sudo apt install -y nginx
    ```
 
-### Step 7: Access Rocket.Chat
-Rocket.Chat should now be accessible via your browser at `http://your-domain.com:3000`. Replace `your-domain.com` with your server's domain name or IP address.
-
-### Optional: Set Up Nginx as a Reverse Proxy
-If you want to run Rocket.Chat behind an Nginx reverse proxy (for SSL, etc.), you can set it up as follows:
-
-1. Install Nginx:
-
+   Create a new Nginx configuration file for Rocket.Chat:
    ```bash
-   sudo apt-get install nginx -y
-   ```
-
-2. Configure Nginx:
-
-   ```bash
-   sudo nano /etc/nginx/sites-available/rocketchat
-   ```
-
-3. Add the following configuration:
-
-   ```nginx
+   sudo tee /etc/nginx/sites-available/rocketchat << EOF
    server {
        listen 80;
-       server_name your-domain.com;
+       server_name your_domain.com;
 
        location / {
            proxy_pass http://localhost:3000/;
            proxy_http_version 1.1;
-           proxy_set_header Upgrade $http_upgrade;
+           proxy_set_header Upgrade \$http_upgrade;
            proxy_set_header Connection "upgrade";
-           proxy_set_header Host $host;
-           proxy_set_header X-Real-IP $remote_addr;
-           proxy_set_header X-Forward-For $proxy_add_x_forwarded_for;
-           proxy_set_header X-Forward-Proto http;
-           proxy_set_header X-Nginx-Proxy true;
+           proxy_set_header Host \$host;
+           proxy_set_header X-Real-IP \$remote_addr;
+           proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+           proxy_set_header X-Forwarded-Proto \$scheme;
+           proxy_set_header X-NginX-Proxy true;
            proxy_redirect off;
        }
    }
+   EOF
    ```
 
-4. Enable the configuration and restart Nginx:
-
+   Enable the configuration and restart Nginx:
    ```bash
    sudo ln -s /etc/nginx/sites-available/rocketchat /etc/nginx/sites-enabled/rocketchat
+   sudo nginx -t
    sudo systemctl restart nginx
    ```
 
-Rocket.Chat should now be running behind Nginx, and accessible via `http://your-domain.com`. For SSL, you can use Let's Encrypt to secure your domain.
+### 8. **Set Up MySQL**
+   Install MySQL and secure the installation:
+   ```bash
+   sudo apt install -y mysql-server
+   sudo mysql_secure_installation
+   ```
 
-That's it! Rocket.Chat should now be fully operational on your Ubuntu 22.04 server.
+   Create a MySQL database and user for Rocket.Chat:
+   ```bash
+   sudo mysql -u root -p
+   CREATE DATABASE rocketchat;
+   CREATE USER 'rocketchat'@'localhost' IDENTIFIED BY 'yourpassword';
+   GRANT ALL PRIVILEGES ON rocketchat.* TO 'rocketchat'@'localhost';
+   FLUSH PRIVILEGES;
+   EXIT;
+   ```
 
-After initialized, you can access the server at http://localhost:3000
+### 9. **Install Certbot for SSL**
+   ```bash
+   sudo apt install -y certbot python3-certbot-nginx
+   sudo certbot --nginx -d your_domain.com
+   ```
+
+   Follow the prompts to obtain and configure the SSL certificate.
+
+### 10. **Final Configuration**
+   Update the Rocket.Chat systemd service to include MySQL:
+   ```bash
+   sudo nano /lib/systemd/system/rocketchat.service
+   ```
+
+   Modify the `Environment=MONGO_URL` line if you want to point to MySQL. Since Rocket.Chat uses MongoDB by default, this step may not be necessary unless you intend to manage other related databases with MySQL.
+
+   Reload systemd:
+   ```bash
+   sudo systemctl daemon-reload
+   sudo systemctl restart rocketchat
+   ```
+
+Rocket.Chat should now be accessible via `https://your_domain.com`.
 
 More details at: [Developer Docs](https://developer.rocket.chat/v1/docs/server-environment-setup)
 PS: For Windows you MUST use WSL2 and have +12Gb RAM
